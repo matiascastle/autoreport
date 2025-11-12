@@ -41,7 +41,7 @@ class DataAnalyzer:
                     pass
             
             # Detecta numéricos
-            if pd.api.types.is_numeric_dtype(self.df[col]) or self._is_numeric_string(col):
+            if pd.api.types.is_numeric_dtype(self.df[col]):
                 results['numeric'].append(col)
                 
                 # ¿Es dinero?
@@ -63,6 +63,40 @@ class DataAnalyzer:
                 else:
                     results['metrics'][col] = 'number'
                     results['column_info'][col] = 'number'
+            
+            # Check if it's a numeric string that needs conversion
+            elif self._is_numeric_string(col):
+                try:
+                    # Convert to numeric, coercing errors to NaN
+                    self.df[col] = pd.to_numeric(
+                        self.df[col].astype(str).str.replace(',', '').str.replace('$', '').str.replace('%', ''),
+                        errors='coerce'
+                    )
+                    results['numeric'].append(col)
+                    
+                    # ¿Es dinero?
+                    if any(keyword in col_lower for keyword in ['revenue', 'price', 'cost', 'sales', 'total', 'amount', 'ingreso', 'venta', 'precio']):
+                        results['metrics'][col] = 'currency'
+                        results['column_info'][col] = 'currency'
+                    
+                    # ¿Es porcentaje?
+                    elif any(keyword in col_lower for keyword in ['rate', 'percent', '%', 'pct', 'ratio', 'tasa', 'porcentaje']):
+                        results['metrics'][col] = 'percentage'
+                        results['column_info'][col] = 'percentage'
+                    
+                    # ¿Es cantidad?
+                    elif any(keyword in col_lower for keyword in ['quantity', 'count', 'orders', 'units', 'cantidad', 'pedidos']):
+                        results['metrics'][col] = 'count'
+                        results['column_info'][col] = 'count'
+                    
+                    # Default: número
+                    else:
+                        results['metrics'][col] = 'number'
+                        results['column_info'][col] = 'number'
+                except:
+                    # If conversion fails, treat as category
+                    results['categories'].append(col)
+                    results['column_info'][col] = 'category'
             
             # Detecta categorías
             elif pd.api.types.is_string_dtype(self.df[col]) or pd.api.types.is_object_dtype(self.df[col]):
@@ -99,31 +133,44 @@ class DataAnalyzer:
         # Revenue total
         if revenue_cols:
             main_revenue = revenue_cols[0]
-            metrics['total_revenue'] = {
-                'value': float(self.df[main_revenue].sum()),
-                'label': 'Total Revenue',
-                'format': 'currency'
-            }
-            
-            # AOV (Average Order Value)
-            if count_cols:
-                order_col = count_cols[0]
-                total_orders = self.df[order_col].sum()
-                if total_orders > 0:
-                    metrics['aov'] = {
-                        'value': float(self.df[main_revenue].sum() / total_orders),
-                        'label': 'Average Order Value',
-                        'format': 'currency'
-                    }
+            try:
+                # Ensure column is numeric and handle NaN values
+                revenue_sum = pd.to_numeric(self.df[main_revenue], errors='coerce').sum()
+                metrics['total_revenue'] = {
+                    'value': float(revenue_sum),
+                    'label': 'Total Revenue',
+                    'format': 'currency'
+                }
+                
+                # AOV (Average Order Value)
+                if count_cols:
+                    order_col = count_cols[0]
+                    try:
+                        total_orders = pd.to_numeric(self.df[order_col], errors='coerce').sum()
+                        if total_orders > 0:
+                            metrics['aov'] = {
+                                'value': float(revenue_sum / total_orders),
+                                'label': 'Average Order Value',
+                                'format': 'currency'
+                            }
+                    except:
+                        pass
+            except Exception as e:
+                print(f"Error calculating revenue metrics: {e}")
         
         # Total de órdenes/cantidad
         if count_cols:
             main_count = count_cols[0]
-            metrics['total_orders'] = {
-                'value': int(self.df[main_count].sum()),
-                'label': f'Total {main_count.title()}',
-                'format': 'number'
-            }
+            try:
+                # Ensure column is numeric and handle NaN values
+                count_sum = pd.to_numeric(self.df[main_count], errors='coerce').sum()
+                metrics['total_orders'] = {
+                    'value': int(count_sum),
+                    'label': f'Total {main_count.title()}',
+                    'format': 'number'
+                }
+            except Exception as e:
+                print(f"Error calculating count metrics: {e}")
         
         # Total de registros
         metrics['total_records'] = {
@@ -136,11 +183,14 @@ class DataAnalyzer:
         customer_cols = [col for col in self.detected_columns['categories'] 
                         if any(keyword in col.lower() for keyword in ['customer', 'client', 'user', 'cliente', 'usuario'])]
         if customer_cols:
-            metrics['unique_customers'] = {
-                'value': int(self.df[customer_cols[0]].nunique()),
-                'label': 'Unique Customers',
-                'format': 'number'
-            }
+            try:
+                metrics['unique_customers'] = {
+                    'value': int(self.df[customer_cols[0]].nunique()),
+                    'label': 'Unique Customers',
+                    'format': 'number'
+                }
+            except:
+                pass
         
         # Growth (si hay fechas)
         if date_cols and revenue_cols:
@@ -148,8 +198,10 @@ class DataAnalyzer:
             revenue_col = revenue_cols[0]
             
             try:
-                df_sorted = self.df.sort_values(date_col)
+                df_sorted = self.df.copy()
                 df_sorted[date_col] = pd.to_datetime(df_sorted[date_col])
+                df_sorted[revenue_col] = pd.to_numeric(df_sorted[revenue_col], errors='coerce')
+                df_sorted = df_sorted.sort_values(date_col)
                 
                 # Últimos 7 días vs 7 días anteriores
                 latest_date = df_sorted[date_col].max()
@@ -166,8 +218,8 @@ class DataAnalyzer:
                         'label': 'Growth vs Last Week',
                         'format': 'percentage'
                     }
-            except:
-                pass
+            except Exception as e:
+                print(f"Error calculating growth: {e}")
         
         return metrics
     
@@ -190,7 +242,11 @@ class DataAnalyzer:
             revenue_col = revenue_cols[0]
             
             try:
-                df_grouped = self.df.groupby(date_col)[revenue_col].sum().reset_index()
+                # Ensure revenue column is numeric
+                df_copy = self.df.copy()
+                df_copy[revenue_col] = pd.to_numeric(df_copy[revenue_col], errors='coerce')
+                
+                df_grouped = df_copy.groupby(date_col)[revenue_col].sum().reset_index()
                 df_grouped = df_grouped.sort_values(date_col)
                 
                 charts['line_chart'] = {
@@ -209,7 +265,11 @@ class DataAnalyzer:
             revenue_col = revenue_cols[0]
             
             try:
-                df_grouped = self.df.groupby(category_col)[revenue_col].sum().reset_index()
+                # Ensure revenue column is numeric
+                df_copy = self.df.copy()
+                df_copy[revenue_col] = pd.to_numeric(df_copy[revenue_col], errors='coerce')
+                
+                df_grouped = df_copy.groupby(category_col)[revenue_col].sum().reset_index()
                 df_grouped = df_grouped.sort_values(revenue_col, ascending=False).head(10)
                 
                 charts['pie_chart'] = {
@@ -226,7 +286,11 @@ class DataAnalyzer:
             revenue_col = revenue_cols[0]
             
             try:
-                df_grouped = self.df.groupby(category_col)[revenue_col].sum().reset_index()
+                # Ensure revenue column is numeric
+                df_copy = self.df.copy()
+                df_copy[revenue_col] = pd.to_numeric(df_copy[revenue_col], errors='coerce')
+                
+                df_grouped = df_copy.groupby(category_col)[revenue_col].sum().reset_index()
                 df_grouped = df_grouped.sort_values(revenue_col, ascending=False).head(10)
                 
                 charts['bar_chart'] = {
