@@ -1,0 +1,17 @@
+date,store_name,total_sales,transactions,avg_ticket,region
+2025-01-01,Downtown Store,12500.50,145,86.21,North
+2025-01-02,Mall Location,15200.75,180,84.45,South
+2025-01-03,Suburb Branch,9800.00,120,81.67,East
+2025-01-04,City Center,18500.25,210,88.10,West
+2025-01-05,Airport Shop,11200.50,95,117.90,North
+2025-01-06,Beach Store,13800.00,155,89.03,South
+2025-01-07,Mountain Outlet,16200.75,190,85.27,East
+2025-01-08,Downtown Store,14600.25,165,88.49,North
+2025-01-09,Mall Location,17400.50,205,84.88,South
+2025-01-10,Suburb Branch,10900.00,135,80.74,East
+2025-01-11,City Center,19200.75,225,85.34,West
+2025-01-12,Airport Shop,12100.50,105,115.24,North
+2025-01-13,Beach Store,14700.25,170,86.47,South
+2025-01-14,Mountain Outlet,17600.00,200,88.00,East
+2025-01-15,Downtown Store,15950.75,185,86.22,North
+
